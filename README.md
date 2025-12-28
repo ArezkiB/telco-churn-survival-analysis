@@ -2,7 +2,7 @@
 Survival analysis of customer churn using R and Cox Proportional Hazards models.
 # Survival Analysis of Telco Customer Churn
 
-## 📌 Project Overview
+##  Project Overview
 Customer retention is a critical metric for subscription-based businesses. Traditional predictive models often treat "churn" as a simple binary event (will they leave?), ignoring the dimension of **time** (when will they leave?).
 
 This project applies **Survival Analysis** techniques to the Kaggle Telco Customer Churn dataset to:
@@ -10,7 +10,7 @@ This project applies **Survival Analysis** techniques to the Kaggle Telco Custom
 2.  Identify significant risk factors using Cox Proportional Hazards models.
 3.  Provide actionable business recommendations to maximize **Long-Term Customer Worth**.
 
-## 📊 Key Results
+## Key Results
 
 ### 1. Retention by Contract Type
 Contract duration is the strongest predictor of retention.
@@ -27,17 +27,17 @@ The model is highly effective at distinguishing between low-risk and high-risk c
 * **12-Month AUC:** 0.860
 * **36-Month AUC:** 0.879
 
-## 💡 Business Recommendations
+## 4.Business Recommendations
 Based on the survival model, the following actions are recommended:
 * **Incentivize Long-Term Contracts:** Aggressively migrate month-to-month users to yearly plans using rate-locks or "first month free" offers.
 * **Investigate Fiber Optic:** Urgent satisfaction auditing is needed for fiber users to address the high churn rate.
 * **Promote Auto-Pay:** Users on "Electronic Check" are 2x more likely to churn. Incentivize a switch to automatic credit card/bank payments.
 
-## 🛠️ Technologies Used
+## Technologies Used
 * **R** (Tidyverse, Survival, Survminer, SurvivalROC)
 * **Techniques:** Kaplan-Meier Estimators, Cox Proportional Hazards, Stepwise AIC Selection, Time-Dependent ROC.
 
-## 🚀 How to Run
+## How to Run
 1.  Clone the repo.
 2.  Ensure you have the required R packages installed:
     ```r
