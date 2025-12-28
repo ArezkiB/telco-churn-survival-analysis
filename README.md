@@ -1,4 +1,4 @@
-# telco-churn-survival-analysis
+# Telco-churn-survival-analysis
 Survival analysis of customer churn using R and Cox Proportional Hazards models.
 # Survival Analysis of Telco Customer Churn
 
