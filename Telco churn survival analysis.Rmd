@@ -1,0 +1,212 @@
+---
+title: "Survival Analysis Exam Arezki BALI: "
+output:
+  pdf_document: default
+  html_document: default
+date: "2025-12-21"
+---
+
+
+
+```{r}
+
+library(tidyverse)
+library(survival)
+library(broom)
+library(survminer)   # For Kaplan-Meier plots
+library(survivalROC) # For Time-Dependent ROC
+```
+
+```{r}
+# Data Loading
+dat <- read.csv("/Users/arezkibali/Downloads/WA_Fn-UseC_-Telco-Customer-Churn.csv")
+
+```
+
+```{r}
+# Convert 'TotalCharges' to numeric (this introduces NAs for blank strings)
+dat$TotalCharges <- as.numeric(dat$TotalCharges)
+
+# Handle Missing Values (The "Emicvaz" improvement: Impute 0 instead of dropping)
+# Logic: If tenure is 0, TotalCharges should be 0.
+dat$TotalCharges[is.na(dat$TotalCharges)] <- 0
+
+# Convert Target 'Churn' to Binary (1 = Yes, 0 = No)
+dat$Churn <- ifelse(dat$Churn == "Yes", 1, 0)
+
+# Convert Categorical Predictors to Factors
+dat$Contract <- as.factor(dat$Contract)
+dat$PaymentMethod <- as.factor(dat$PaymentMethod)
+dat$InternetService <- as.factor(dat$InternetService)
+dat$gender <- as.factor(dat$gender)
+```
+
+```{r}
+#  Kaplan-Meier Plots) 
+
+# 1. Fit the Kaplan-Meier overall
+km_fit_contract <- survfit(Surv(tenure, Churn) ~ 1, data = dat)
+
+# 2. Plot 
+ggsurvplot(km_fit_contract, 
+           data = dat, 
+           pval = TRUE,             # Show p-value
+           risk.table = TRUE,       # Show table of people at risk
+           conf.int = TRUE,         # Show confidence intervals
+           palette = "jco",         # Nice color palette
+           main = "Kaplan-Meier: Actual Retention by Contract Type",
+           xlab = "Months (Tenure)",
+           ylab = "Retention Probability")
+```
+```{r}
+#  Kaplan-Meier by contract 
+km_fit_contract <- survfit(Surv(tenure, Churn) ~ Contract, data = dat)
+
+ggsurvplot(km_fit_contract, 
+           data = dat, 
+           pval = TRUE,
+           conf.int = TRUE,
+           palette = "jco",
+           
+           # --- VISUAL FIXES ---
+           legend = "right",                   
+           legend.title = "Contract Type",
+           legend.labs = c("Month-to-month", "One Year", "Two Year"),
+           xlab = "Tenure (Months)",
+           ylab = "Retention Probability",
+           font.x = 10,                        
+           font.y = 10,
+           font.tickslab = 9
+)
+```
+
+```{r}
+
+# Cox: MODEL BUILDING
+
+
+# 1. Define the Full Model WITHOUT 'TotalCharges'
+# Total Charges is mainly Monthly Charge* Tenure...sort of colinearity that will effect the model.
+
+Mfull <- coxph(Surv(tenure, Churn) ~ MonthlyCharges + Contract + 
+                 InternetService + PaymentMethod + PaperlessBilling + 
+                 gender + Partner + Dependents, 
+               data = dat)
+
+# 2. Run Standard Stepwise Selection
+MAIC <- step(Mfull, direction = "both", trace = 0)
+
+print("Best Model Selected")
+summary(MAIC)
+```
+```{r}
+
+# VISUALIZATION: FOREST PLOT (Hazard Ratios)
+
+library(survminer)
+
+# Create the Forest Plot
+p <-ggforest(MAIC,          
+         data = dat,         
+         main = "Hazard Ratios: Predictors of Churn",
+         fontsize = 0.8,     
+         refLabel = "Ref",   
+         cpositions = c(0.02, 0.22, 0.4) 
+)
+
+p
+
+# Save  with specific dimensions (Width x Height)
+ggsave("ForestPlot_Tall.png", plot = p, width = 10, height = 12) 
+```
+
+
+```{r}
+#VALIDATION: TRAIN/TEST SPLIT
+
+set.seed(123) # For reproducibility
+train_index <- sample(1:nrow(dat), size = 0.5 * nrow(dat)) # 50% split
+d_train <- dat[train_index, ]
+d_test  <- dat[-train_index, ]
+
+# Fit model on TRAINING data only
+M_train <- coxph(Surv(tenure, Churn) ~ MonthlyCharges + Contract + 
+                   InternetService + PaymentMethod + PaperlessBilling, 
+                 data = d_train)
+
+# Predict risk scores on TESTING data
+d_test$risk_score <- predict(M_train, newdata = d_test, type = "lp")
+
+# Calculate C-Statistic (Concordance) on Test Data
+# 0.5 = Random, 1.0 = Perfect
+perf_test <- coxph(Surv(tenure, Churn) ~ risk_score, data = d_test)
+c_index <- summary(perf_test)$concordance[1]
+
+print(paste("C-Statistic (Test Set):", round(c_index, 3)))
+```
+
+
+
+```{r}
+# DIAGNOSTICS: CHECKING ASSUMPTIONS
+
+# A. Martingale Residuals (Check Linearity of MonthlyCharges)
+dat$residuals <- residuals(MAIC, type = "martingale")
+plot(dat$MonthlyCharges, dat$residuals, col = "gray",
+     main = "Linearity Check: Monthly Charges",
+     xlab = "Monthly Charges", ylab = "Martingale Residuals")
+lines(lowess(dat$MonthlyCharges, dat$residuals), col = "red", lwd = 2)
+
+# B. Proportional Hazards Test (Schoenfeld Residuals)
+# Checks if risk ratios are constant over time
+test_ph <- cox.zph(MAIC)
+print(" Proportional Hazards Test ")
+print(test_ph)
+
+# Visual check for 'Contract' (Likely violator)
+plot(test_ph, var = "Contract")
+```
+
+
+```{r}
+library(survivalROC)
+library(dplyr)
+library(purrr)
+library(tidyr)
+library(ggplot2)
+
+times_to_check <- c(12, 24, 36)
+
+# If Churn and tenure are already correct, keep it simple:
+d_test <- dat %>%
+  mutate(lp = predict(MAIC, newdata = ., type = "lp"))
+
+roc_df <- map_df(times_to_check, function(t) {
+  roc <- survivalROC(
+    Stime        = d_test$tenure,
+    status       = d_test$Churn,
+    marker       = d_test$lp,
+    predict.time = t,
+    method       = "NNE",
+    span         = 0.25 * nrow(d_test)^(-0.20)
+  )
+
+  tibble(
+    t   = t,
+    auc = roc$AUC,
+    FP  = roc$FP,
+    TP  = roc$TP
+  )
+})
+
+ggplot(roc_df, aes(FP, TP)) +
+  geom_line() +
+  geom_abline(linetype = "dashed") +
+  geom_label(
+    data = roc_df %>% distinct(t, auc),
+    aes(x = 0.6, y = 0.2, label = sprintf("AUC = %.3f", auc)),
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~t, labeller = labeller(t = \(x) paste0(x, " months"))) +
+  theme_bw()
+```
